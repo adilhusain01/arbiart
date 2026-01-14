@@ -4,15 +4,6 @@
 
 A decentralized application that combats AI-generated fake images by enabling users to capture photos via webcam and cryptographically verify them on-chain. Using Arbitrum's Stylus (Rust smart contracts) and Orbit L3, each photo is hashed, stored on IPFS, and verified on the blockchain with ZK-style ownership proofs.
 
-## 🎥 Demo Flow
-
-1. 📸 Capture a photo via webcam
-2. 🔐 Hash it client-side (SHA-256)
-3. 📤 Upload to IPFS (Pinata)
-4. ⛓️ Submit ZK commitment to Stylus contract
-5. 🏷️ Get verifiable proof badge
-6. 🐦 Share on Twitter with verification link
-
 ---
 
 ## 🌟 Features
@@ -294,7 +285,7 @@ npm run preview   # Preview production build
 
 ---
 
-## 🎯 Hackathon Achievements
+## 🎯 What we have Achieved
 
 | Category | Implementation |
 |----------|---------------|
@@ -320,18 +311,6 @@ npm run preview   # Preview production build
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome! Please fork the repository and submit a Pull Request.
-
----
-
-## 📄 License
-
-MIT License
-
----
-
 ## 🔗 Resources
 
 - [Stylus Documentation](https://docs.arbitrum.io/stylus/stylus-gentle-introduction)
@@ -342,13 +321,6 @@ MIT License
 
 ---
 
-## 📞 Support
-
-- Open a GitHub Issue
-- Join [Arbitrum Discord](https://discord.gg/arbitrum)
-
----
-
-**Built with ❤️ for the Arbitrum Hackathon 🏆**
+**Built with ❤️  🏆**
 
 *Fighting AI fakes with blockchain technology*
