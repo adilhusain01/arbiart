@@ -41,7 +41,7 @@ export function getDeviceFingerprint(): string {
     screen.height,
     new Date().getTimezoneOffset(),
     navigator.hardwareConcurrency || '',
-    navigator.deviceMemory || '',
+    (navigator as any).deviceMemory || '',
   ].join('|');
   
   return '0x' + sha256(components);

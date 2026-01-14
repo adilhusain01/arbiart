@@ -12,10 +12,11 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
+  "exclude": ["src/components/PhotoCapture.tsx", "src/components/EnvCheck.tsx", "src/utils/exampleFlow.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

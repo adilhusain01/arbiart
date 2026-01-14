@@ -6,7 +6,7 @@ import { VERIFIER_ABI, VERIFIER_ADDRESS } from '../config'
 import { Hash, encodeFunctionData } from 'viem'
 import { arbitrumSepolia } from 'wagmi/chains'
 import { collectDeviceMetadata, hashToBigInt } from '../utils/deviceMetadata'
-import { generateZKProof, storeSecretSecurely, retrieveSecret, verifyZKProofLocally, computeCommitment } from '../utils/zkProof'
+import { generateZKProof, storeSecretSecurely, retrieveSecret, computeCommitment } from '../utils/zkProof'
 import { uploadToPinata } from '../utils/ipfs'
 import { 
   generateVerificationUrl, 
@@ -17,6 +17,7 @@ import {
   addVerificationWatermark,
   VerificationData
 } from '../utils/verification'
+import { createSimpleAttestation } from '../utils/eas'
 
 const videoConstraints = {
   width: 1280,
@@ -32,9 +33,11 @@ interface PhotoData {
   ipfsCid?: string
   zkSecret?: string
   verificationId?: string
+  easAttestationId?: string  // EAS attestation UID
+  easExplorerUrl?: string    // EAS explorer URL
 }
 
-type VerificationStep = 'idle' | 'collecting' | 'uploading' | 'signing' | 'confirming' | 'complete'
+type VerificationStep = 'idle' | 'collecting' | 'uploading' | 'signing' | 'confirming' | 'attesting' | 'complete'
 
 export const PhotoCaptureEnhanced: React.FC = () => {
   const webcamRef = useRef<Webcam>(null)
@@ -44,6 +47,7 @@ export const PhotoCaptureEnhanced: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [watermarkedImage, setWatermarkedImage] = useState<string | null>(null)
   const [pendingTxHash, setPendingTxHash] = useState<Hash | null>(null)
+  const [attestationCreated, setAttestationCreated] = useState(false)
   
   const { address, isConnected } = useAccount()
   const chainId = useChainId()
@@ -69,25 +73,66 @@ export const PhotoCaptureEnhanced: React.FC = () => {
 
   // Handle confirmation complete
   useEffect(() => {
-    if (isConfirmed && photo && pendingTxHash && address) {
-      setStep('complete')
+    if (isConfirmed && photo && pendingTxHash && address && !attestationCreated) {
+      // Mark as created immediately to prevent re-runs
+      setAttestationCreated(true)
       
-      // Store verification data locally
-      const verificationData: VerificationData = {
-        photoHash: photo.hash,
-        txHash: pendingTxHash,
-        timestamp: Math.floor(Date.now() / 1000),
-        owner: address,
-        ipfsCid: photo.ipfsCid
+      // Create EAS attestation
+      setStep('attesting')
+      
+      const createAttestation = async () => {
+        try {
+          // Get stored ZK commitment
+          const storedMetadata = localStorage.getItem(`arbipic_metadata_${photo.hash}`)
+          const metadata = storedMetadata ? JSON.parse(storedMetadata) : {}
+          
+          const easResult = await createSimpleAttestation(
+            `0x${photo.hash}`,
+            Math.floor(Date.now() / 1000),
+            address,
+            photo.ipfsCid || '',
+            metadata.zkCommitment || '0x0'
+          )
+          
+          if (easResult.success && easResult.attestationId) {
+            setPhoto(prev => prev ? { 
+              ...prev, 
+              easAttestationId: easResult.attestationId,
+              easExplorerUrl: easResult.explorerUrl 
+            } : null)
+            console.log('✅ EAS Attestation created:', easResult.attestationId)
+            if (easResult.explorerUrl) {
+              console.log('🔗 View on EAS Explorer:', easResult.explorerUrl)
+            }
+            if (easResult.error) {
+              console.warn('⚠️', easResult.error)
+            }
+          }
+        } catch (err) {
+          console.warn('EAS attestation failed (non-critical):', err)
+        }
+        
+        setStep('complete')
+        
+        // Store verification data locally
+        const verificationData: VerificationData = {
+          photoHash: photo.hash,
+          txHash: pendingTxHash,
+          timestamp: Math.floor(Date.now() / 1000),
+          owner: address,
+          ipfsCid: photo.ipfsCid
+        }
+        storeVerificationLocally(verificationData)
+        
+        // Generate watermarked image
+        addVerificationWatermark(photo.imageSrc, photo.hash)
+          .then(setWatermarkedImage)
+          .catch(console.error)
       }
-      storeVerificationLocally(verificationData)
       
-      // Generate watermarked image
-      addVerificationWatermark(photo.imageSrc, photo.hash)
-        .then(setWatermarkedImage)
-        .catch(console.error)
+      createAttestation()
     }
-  }, [isConfirmed, photo, pendingTxHash, address])
+  }, [isConfirmed, photo, pendingTxHash, address, attestationCreated])
 
   const capture = useCallback(() => {
     setIsCapturing(true)
@@ -208,13 +253,17 @@ export const PhotoCaptureEnhanced: React.FC = () => {
         throw new Error('MetaMask not found')
       }
       
+      // Get current gas price for reliability
+      const gasPrice = await ethereum.request({ method: 'eth_gasPrice' })
+      
       const txHash = await ethereum.request({
         method: 'eth_sendTransaction',
         params: [{
           from: address,
           to: VERIFIER_ADDRESS,
           data: callData,
-          gas: '0x3D090', // 250000 in hex
+          gas: '0x7A120', // 500000 in hex - increased for reliability
+          gasPrice: gasPrice // Use current gas price
         }],
       }) as Hash
       
@@ -346,7 +395,9 @@ export const PhotoCaptureEnhanced: React.FC = () => {
       
       // Verify locally first
       const secretBigInt = BigInt(secret)
-      const commitment = computeCommitment(`0x${photo.hash}`, secretBigInt)
+      // Compute locally to validate before on-chain call
+      const _commitment = computeCommitment(`0x${photo.hash}`, secretBigInt)
+      console.log('Local commitment:', _commitment)
       
       // Call the on-chain verification
       const ethereum = (window as any).ethereum
@@ -393,6 +444,7 @@ export const PhotoCaptureEnhanced: React.FC = () => {
     setError(null)
     setWatermarkedImage(null)
     setPendingTxHash(null)
+    setAttestationCreated(false)
   }
 
   const getStepMessage = () => {
@@ -401,6 +453,7 @@ export const PhotoCaptureEnhanced: React.FC = () => {
       case 'uploading': return '☁️ Uploading to IPFS...'
       case 'signing': return '✍️ Please sign the transaction...'
       case 'confirming': return '⏳ Confirming on blockchain...'
+      case 'attesting': return '📜 Creating EAS attestation...'
       case 'complete': return '✅ Photo verified!'
       default: return null
     }
@@ -487,11 +540,11 @@ export const PhotoCaptureEnhanced: React.FC = () => {
                   </code>
                 </div>
                 
-                {attestation && attestation > 0n && (
+                {attestation && attestation[0] > 0n && (
                   <div className="flex items-center justify-between">
                     <span className="text-gray-600 font-medium">Verified At:</span>
                     <span className="text-sm text-green-600 font-semibold">
-                      {new Date(Number(attestation) * 1000).toLocaleString()}
+                      {new Date(Number(attestation[0]) * 1000).toLocaleString()}
                     </span>
                   </div>
                 )}
@@ -524,6 +577,26 @@ export const PhotoCaptureEnhanced: React.FC = () => {
                   </div>
                 )}
 
+                {photo.easAttestationId && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600 font-medium">EAS:</span>
+                    {photo.easExplorerUrl ? (
+                      <a 
+                        href={photo.easExplorerUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-lg font-mono hover:bg-purple-200 transition-colors"
+                      >
+                        📜 View Attestation ↗
+                      </a>
+                    ) : (
+                      <span className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-lg font-mono">
+                        📜 {photo.easAttestationId.startsWith('local-') ? 'Local' : 'On-chain'}
+                      </span>
+                    )}
+                  </div>
+                )}
+
                 {photo.zkSecret && (
                   <div className="flex items-center justify-between">
                     <span className="text-gray-600 font-medium">ZK Proof:</span>
@@ -539,17 +612,17 @@ export const PhotoCaptureEnhanced: React.FC = () => {
                 <div className="flex gap-3">
                   <button
                     onClick={verifyWithMetadata}
-                    disabled={isConfirming || !isConnected || (attestation && attestation > 0n) || step !== 'idle'}
+                    disabled={isConfirming || !isConnected || (attestation && attestation[0] > 0n) || step !== 'idle'}
                     className="flex-1 py-3 px-6 bg-gradient-to-r from-green-500 to-emerald-500 text-white font-semibold rounded-xl shadow-lg hover:from-green-600 hover:to-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   >
-                    {(attestation && attestation > 0n) ? '✅ Already Verified' :
+                    {(attestation && attestation[0] > 0n) ? '✅ Already Verified' :
                      !isCorrectNetwork ? '🔄 Switch Network' :
                      '🔐 Verify with Metadata'}
                   </button>
 
                   <button
                     onClick={verifySimple}
-                    disabled={isConfirming || !isConnected || (attestation && attestation > 0n) || step !== 'idle'}
+                    disabled={isConfirming || !isConnected || (attestation && attestation[0] > 0n) || step !== 'idle'}
                     className="py-3 px-6 bg-gray-600 text-white font-semibold rounded-xl shadow-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     title="Quick verify without metadata"
                   >

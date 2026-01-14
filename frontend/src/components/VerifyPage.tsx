@@ -116,16 +116,16 @@ export const VerifyPage: React.FC = () => {
     }
   })
 
-  // Read full metadata
+  // Read full metadata (using getAttestation)
   const { data: metadata } = useReadContract({
     address: VERIFIER_ADDRESS,
     abi: VERIFIER_ABI,
-    functionName: 'getPhotoMetadata',
+    functionName: 'getAttestation',
     args: searchHash ? [BigInt(`0x${searchHash}`)] : undefined,
     query: {
       enabled: !!searchHash
     }
-  }) as { data: [string, bigint, string, boolean] | undefined }
+  }) as { data: [bigint, `0x${string}`, bigint] | undefined }
 
   const handleImageUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -227,11 +227,12 @@ export const VerifyPage: React.FC = () => {
     }
   }, [handleHashSearch])
 
+  // Parse attestation data (now returns [timestamp, owner, zkCommitment])
   const parsedMetadata: PhotoMetadata | null = metadata ? {
-    ipfsCid: metadata[0],
-    verifiedAt: metadata[1],
-    owner: metadata[2],
-    isEncrypted: metadata[3]
+    ipfsCid: '', // Not stored on-chain anymore, will get from localStorage
+    verifiedAt: metadata[0],
+    owner: metadata[1] as string,
+    isEncrypted: false // Not stored on-chain
   } : null
 
   return (
@@ -390,11 +391,11 @@ export const VerifyPage: React.FC = () => {
                       </code>
                     </div>
 
-                    {attestation && attestation > 0n && (
+                    {attestation && attestation[0] > 0n && (
                       <div className="flex items-center justify-between">
                         <span className="text-gray-600 font-medium">Verified On:</span>
                         <span className="text-green-600 font-semibold">
-                          {new Date(Number(attestation) * 1000).toLocaleString()}
+                          {new Date(Number(attestation[0]) * 1000).toLocaleString()}
                         </span>
                       </div>
                     )}

@@ -191,8 +191,11 @@ export async function decryptImage(
     ['encrypt', 'decrypt']
   );
   
+  // Create a copy of the IV to avoid TypedArray issues
+  const ivCopy = new Uint8Array(iv);
+  
   return await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv },
+    { name: 'AES-GCM', iv: ivCopy },
     key,
     encryptedData
   );

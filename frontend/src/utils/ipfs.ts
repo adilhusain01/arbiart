@@ -90,6 +90,7 @@ export async function uploadToNFTStorage(
   const formData = new FormData();
   formData.append('file', imageBlob);
 
+  const NFT_STORAGE_KEY = import.meta.env.VITE_NFT_STORAGE_KEY || '';
   const response = await fetch('https://api.nft.storage/upload', {
     method: 'POST',
     headers: {
